@@ -1,0 +1,97 @@
+name: ezra
+
+services:
+
+  # ── Ollama ─────────────────────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ezra-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    networks:
+      - ezra-net
+    restart: unless-stopped
+    # Uncomment if you add a GPU later:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # ── Open WebUI ─────────────────────────────────────────────────────────────
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: ezra-open-webui
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      # Enable RAG (built-in via ChromaDB + SQLite)
+      RAG_EMBEDDING_ENGINE: ollama
+      RAG_OLLAMA_BASE_URL: http://ollama:11434
+    volumes:
+      - open_webui_data:/app/backend/data
+    ports:
+      - "127.0.0.1:3000:8080"
+    networks:
+      - ezra-net
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  # ── n8n ────────────────────────────────────────────────────────────────────
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: ezra-n8n
+    environment:
+      N8N_HOST: ${N8N_HOST:-localhost}
+      N8N_PORT: 5678
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
+      WEBHOOK_URL: ${WEBHOOK_URL:-http://localhost:5678/}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      DB_TYPE: sqlite
+      DB_SQLITE_DATABASE: /home/node/.n8n/database.sqlite
+      GENERIC_TIMEZONE: ${TIMEZONE:-America/New_York}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    ports:
+      - "127.0.0.1:5678:5678"
+    networks:
+      - ezra-net
+    restart: unless-stopped
+
+  # ── Tailscale ──────────────────────────────────────────────────────────────
+  # Runs in host-network mode so Tailscale Serve can proxy to localhost ports.
+  # Set TS_SERVE_CONFIG to point at ./config/tailscale/ts-serve.json to
+  # expose Open WebUI and n8n over your tailnet without opening firewall ports.
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: ezra-tailscale
+    hostname: ezra
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "true"
+      TS_SERVE_CONFIG: /config/ts-serve.json
+      TS_EXTRA_ARGS: ${TS_EXTRA_ARGS:-}
+    volumes:
+      - tailscale_data:/var/lib/tailscale
+      - ./config/tailscale:/config
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  open_webui_data:
+  n8n_data:
+  tailscale_data:
+
+networks:
+  ezra-net:
+    driver: bridge
