@@ -1,0 +1,212 @@
+{
+  "name": "EZRA Morning Briefing",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "7 AM Weekdays",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 20,
+        "filters": {
+          "q": "is:unread newer_than:1d -category:promotions -category:social"
+        },
+        "options": {
+          "format": "resolved"
+        }
+      },
+      "id": "a1b2c3d4-0002-0002-0002-000000000002",
+      "name": "Get Unread Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [460, 200],
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Google - Naftoli"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "mode": "id",
+          "value": "primary"
+        },
+        "returnAll": false,
+        "limit": 10,
+        "options": {
+          "timeMin": "={{ $now.startOf('day').toISO() }}",
+          "timeMax": "={{ $now.endOf('day').toISO() }}"
+        }
+      },
+      "id": "a1b2c3d4-0003-0003-0003-000000000003",
+      "name": "Get Today's Calendar",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.1,
+      "position": [460, 400],
+      "credentials": {
+        "googleCalendarOAuth2": {
+          "name": "Google - Naftoli"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "emails",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0004-0004-0004-000000000004",
+      "name": "Aggregate Emails",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "events",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0005-0005-0005-000000000005",
+      "name": "Aggregate Events",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0006-0006-0006-000000000006",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "create",
+        "modelId": {
+          "mode": "list",
+          "value": "claude-sonnet-4-6"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You are EZRA, the Executive Zero-Risk Assistant for Naftoli Scheinberg. Generate a concise, scannable morning briefing.\n\nToday is {{ $now.format('dddd, MMMM D, YYYY') }}. Current time: {{ $now.format('h:mm A') }} ET.\n\n## EMAILS (last 24h, unread, excluding promotions/social)\n{{ JSON.stringify($json.emails, null, 2) }}\n\n## CALENDAR (today's events)\n{{ JSON.stringify($json.events, null, 2) }}\n\nFormat your response as:\n\n# EZRA Morning Briefing — {{ $now.format('MMMM D') }}\n\n## Today's Schedule\n[List each event with time and title. Note any back-to-back meetings or conflicts.]\n\n## Email Triage\n[For each email: sender, subject, one-line summary, and urgency flag: 🔴 Urgent / 🟡 Today / 🟢 When free]\n\n## Action Items\n[Bullet list of anything requiring a response or decision today]\n\n## EZRA Note\n[One short observation or heads-up based on the day's pattern]\n\nBe direct. No filler. Naftoli is analytical and busy."
+            }
+          ]
+        },
+        "options": {
+          "maxTokensToSample": 1024
+        }
+      },
+      "id": "a1b2c3d4-0007-0007-0007-000000000007",
+      "name": "Claude API - Briefing",
+      "type": "@n8n/n8n-nodes-langchain.lmAnthropicMessages",
+      "typeVersion": 1,
+      "position": [1120, 300],
+      "credentials": {
+        "anthropicApi": {
+          "name": "Anthropic - EZRA"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://open-webui:8080/api/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.content[0].text }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0008-0008-0008-000000000008",
+      "name": "Send to Open WebUI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 300]
+    }
+  ],
+  "connections": {
+    "7 AM Weekdays": {
+      "main": [
+        [
+          { "node": "Get Unread Emails", "type": "main", "index": 0 },
+          { "node": "Get Today's Calendar", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Get Unread Emails": {
+      "main": [
+        [{ "node": "Aggregate Emails", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Today's Calendar": {
+      "main": [
+        [{ "node": "Aggregate Events", "type": "main", "index": 0 }]
+      ]
+    },
+    "Aggregate Emails": {
+      "main": [
+        [{ "node": "Merge", "type": "main", "index": 0 }]
+      ]
+    },
+    "Aggregate Events": {
+      "main": [
+        [{ "node": "Merge", "type": "main", "index": 1 }]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [{ "node": "Claude API - Briefing", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claude API - Briefing": {
+      "main": [
+        [{ "node": "Send to Open WebUI", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/New_York"
+  },
+}
