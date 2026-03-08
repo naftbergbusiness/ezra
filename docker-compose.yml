@@ -64,6 +64,20 @@ services:
       - ezra-net
     restart: unless-stopped
 
+  # ── Memory API ─────────────────────────────────────────────────────────────
+  memory:
+    build: ./memory
+    container_name: ezra-memory
+    volumes:
+      - memory_data:/data
+    ports:
+      - "127.0.0.1:8001:8001"
+    networks:
+      - ezra-net
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
   # ── Tailscale ──────────────────────────────────────────────────────────────
   # Runs in host-network mode so Tailscale Serve can proxy to localhost ports.
   # Set TS_SERVE_CONFIG to point at ./config/tailscale/ts-serve.json to
@@ -91,6 +105,7 @@ volumes:
   open_webui_data:
   n8n_data:
   tailscale_data:
+  memory_data:
 
 networks:
   ezra-net:
