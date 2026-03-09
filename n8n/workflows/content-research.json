@@ -1,0 +1,139 @@
+{
+  "name": "EZRA Content Research",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "cronExpression", "expression": "0 6 * * 1"}]
+        }
+      },
+      "id": "cr-001",
+      "name": "Weekly Monday 6AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prompt = `You are EZRA, an autonomous content strategist AI. Your job is to identify the most profitable content niches and strategies for a solo operator starting from scratch with zero audience.\n\nContext:\n- Operator: Naftoli Scheinberg, highly analytical\n- Goal: Generate revenue to fund an AI assistant system (EZRA) and hardware upgrades\n- Starting from scratch: no existing audience, no existing content\n- Tools: Claude API, n8n automation, local AI, full content automation pipeline\n- Budget for content creation: $0 upfront\n\nReturn ONLY a valid JSON object with this exact structure (no markdown, no explanation):\n{\n  \"research_summary\": \"2-3 sentence overview of your strategic thinking\",\n  \"strategies\": [\n    {\n      \"niche\": \"specific niche name\",\n      \"platform\": \"specific platform\",\n      \"content_format\": \"specific format\",\n      \"rationale\": \"why this combination will make money\",\n      \"monetization\": \"specific monetization method\",\n      \"target_audience\": \"who specifically this serves\",\n      \"posting_cadence\": \"how often to post\",\n      \"revenue_timeline\": \"when first revenue arrives\",\n      \"monthly_revenue_potential\": \"realistic range at 6 months\",\n      \"competition_level\": \"low/medium/high\",\n      \"ai_advantage\": \"how AI automation gives an edge here\"\n    }\n  ],\n  \"priority_order\": [0, 1, 2, 3, 4],\n  \"immediate_first_content\": \"describe the very first piece of content to create\"\n}\n\nRequirements:\n- Include exactly 5 strategies ranked by revenue potential\n- Be specific and realistic, not generic\n- Prioritize niches where AI-generated content has a natural advantage\n- Consider affiliate marketing, digital products, newsletters, YouTube, LinkedIn, niche blogs\n- Avoid saturated generic niches`;\n\nreturn [{ json: {\n  model: 'claude-opus-4-6',\n  max_tokens: 4096,\n  messages: [{ role: 'user', content: prompt }]\n}}];"
+      },
+      "id": "cr-002",
+      "name": "Build Research Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "x-api-key", "value": "={{ $credentials.httpHeaderAuth.value }}"},
+            {"name": "anthropic-version", "value": "2023-06-01"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "cr-003",
+      "name": "Claude - Niche Research",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "credentials": {
+        "httpHeaderAuth": {"name": "Anthropic - EZRA"}
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst text = response.content[0].text.trim();\nconst cleaned = text.replace(/^```json\\n?/, '').replace(/^```\\n?/, '').replace(/\\n?```$/, '').trim();\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch(e) {\n  throw new Error('Claude did not return valid JSON. Got: ' + text.substring(0, 300));\n}\nreturn [{ json: parsed }];"
+      },
+      "id": "cr-004",
+      "name": "Parse JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst strategies = data.strategies || [];\nconst order = data.priority_order || strategies.map((_, i) => i);\nreturn order.map(idx => ({ json: {\n  ...strategies[idx],\n  priority: order.indexOf(idx),\n  research_summary: data.research_summary\n}}));"
+      },
+      "id": "cr-005",
+      "name": "Split Strategies",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ezra-content:8002/strategies",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ niche: $json.niche, platform: $json.platform, content_format: $json.content_format, rationale: $json.rationale + ' | ' + $json.monetization + ' | ' + $json.revenue_timeline + ' | ' + $json.monthly_revenue_potential, monetization: $json.monetization, target_audience: $json.target_audience, posting_cadence: $json.posting_cadence }) }}",
+        "options": {}
+      },
+      "id": "cr-006",
+      "name": "Save to Content Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 180]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('Parse JSON').first().json;\nreturn [{ json: {\n  research_type: 'niche_strategy',\n  summary: data.research_summary,\n  raw_json: JSON.stringify(data)\n}}];"
+      },
+      "id": "cr-007",
+      "name": "Build Log Entry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ezra-content:8002/research",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "cr-008",
+      "name": "Log Research",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ezra-memory:8001/memory/store",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: 'EZRA Content Strategy: ' + $('Parse JSON').first().json.research_summary, metadata: { type: 'content_strategy', source: 'content_research' } }) }}",
+        "options": {}
+      },
+      "id": "cr-009",
+      "name": "Store in Memory",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 600]
+    }
+  ],
+  "connections": {
+    "Weekly Monday 6AM": {"main": [[{"node": "Build Research Prompt", "type": "main", "index": 0}]]},
+    "Build Research Prompt": {"main": [[{"node": "Claude - Niche Research", "type": "main", "index": 0}]]},
+    "Claude - Niche Research": {"main": [[{"node": "Parse JSON", "type": "main", "index": 0}]]},
+    "Parse JSON": {"main": [[{"node": "Split Strategies", "type": "main", "index": 0}, {"node": "Build Log Entry", "type": "main", "index": 0}, {"node": "Store in Memory", "type": "main", "index": 0}]]},
+    "Split Strategies": {"main": [[{"node": "Save to Content Agent", "type": "main", "index": 0}]]},
+    "Build Log Entry": {"main": [[{"node": "Log Research", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1", "timezone": "America/New_York"}
+}

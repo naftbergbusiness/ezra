@@ -1,0 +1,139 @@
+{
+  "name": "EZRA Content Generation",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "cronExpression", "expression": "0 8 * * *"}]
+        }
+      },
+      "id": "cg-001",
+      "name": "Daily 8AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://ezra-content:8002/strategies",
+        "options": {}
+      },
+      "id": "cg-002",
+      "name": "Get Active Strategies",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const strategies = $input.first().json;\nif (!strategies || strategies.length === 0) {\n  return [{ json: { skip: true, reason: 'No active strategies. Run Content Research workflow first.' } }];\n}\nconst dayIndex = new Date().getDay();\nconst strategy = strategies[dayIndex % strategies.length];\nreturn [{ json: { ...strategy, skip: false } }];"
+      },
+      "id": "cg-003",
+      "name": "Pick Strategy",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [{"leftValue": "={{ $json.skip }}", "rightValue": true, "operator": {"type": "boolean", "operation": "equals"}}],
+          "combinator": "and"
+        }
+      },
+      "id": "cg-004",
+      "name": "Has Strategies?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $input.first().json;\nconst today = new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'});\nconst prompt = `You are EZRA, an autonomous content creator. Generate one high-quality piece of content.\n\nSTRATEGY:\nNiche: ${s.niche}\nPlatform: ${s.platform}\nFormat: ${s.content_format}\nTarget Audience: ${s.target_audience}\nMonetization: ${s.monetization}\nCadence: ${s.posting_cadence}\n\nToday: ${today}\n\nReturn ONLY a valid JSON object (no markdown, no explanation):\n{\n  \"title\": \"compelling title optimized for the platform\",\n  \"hook\": \"first line that stops the scroll\",\n  \"body\": \"full content body formatted for the platform\",\n  \"cta\": \"call to action leading toward monetization\",\n  \"tags\": \"relevant hashtags or keywords comma separated\"\n}\n\nGuidelines:\n- Be genuinely useful and specific, not generic\n- The hook must stop scrolling immediately\n- Format for the platform: short paragraphs for social, headers for blogs\n- Write as a knowledgeable human expert, not as an AI\n- Choose a timely, relevant topic within the niche today`;\n\nreturn [{ json: {\n  strategy: s,\n  request: {\n    model: 'claude-sonnet-4-6',\n    max_tokens: 3000,\n    messages: [{ role: 'user', content: prompt }]\n  }\n}}];"
+      },
+      "id": "cg-005",
+      "name": "Build Content Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "x-api-key", "value": "={{ $credentials.httpHeaderAuth.value }}"},
+            {"name": "anthropic-version", "value": "2023-06-01"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {}
+      },
+      "id": "cg-006",
+      "name": "Claude - Generate Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 180],
+      "credentials": {
+        "httpHeaderAuth": {"name": "Anthropic - EZRA"}
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst text = response.content[0].text.trim();\nconst cleaned = text.replace(/^```json\\n?/, '').replace(/^```\\n?/, '').replace(/\\n?```$/, '').trim();\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch(e) {\n  throw new Error('Claude did not return valid JSON: ' + text.substring(0, 300));\n}\nconst strategy = $('Build Content Prompt').first().json.strategy;\nreturn [{ json: {\n  strategy_id: strategy.id,\n  niche: strategy.niche,\n  platform: strategy.platform,\n  content_format: strategy.content_format,\n  title: parsed.title,\n  body: parsed.body,\n  hook: parsed.hook,\n  cta: parsed.cta,\n  tags: parsed.tags\n}}];"
+      },
+      "id": "cg-007",
+      "name": "Parse Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ezra-content:8002/content/queue",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "cg-008",
+      "name": "Add to Queue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 180]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { message: $input.first().json.reason } }];"
+      },
+      "id": "cg-009",
+      "name": "Skip",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 420]
+    }
+  ],
+  "connections": {
+    "Daily 8AM": {"main": [[{"node": "Get Active Strategies", "type": "main", "index": 0}]]},
+    "Get Active Strategies": {"main": [[{"node": "Pick Strategy", "type": "main", "index": 0}]]},
+    "Pick Strategy": {"main": [[{"node": "Has Strategies?", "type": "main", "index": 0}]]},
+    "Has Strategies?": {"main": [
+      [{"node": "Skip", "type": "main", "index": 0}],
+      [{"node": "Build Content Prompt", "type": "main", "index": 0}]
+    ]},
+    "Build Content Prompt": {"main": [[{"node": "Claude - Generate Content", "type": "main", "index": 0}]]},
+    "Claude - Generate Content": {"main": [[{"node": "Parse Content", "type": "main", "index": 0}]]},
+    "Parse Content": {"main": [[{"node": "Add to Queue", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1", "timezone": "America/New_York"}
+}

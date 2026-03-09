@@ -64,6 +64,18 @@ services:
       - ezra-net
     restart: unless-stopped
 
+  # ── Content Agent ───────────────────────────────────────────────────────────
+  content:
+    build: ./content
+    container_name: ezra-content
+    volumes:
+      - content_data:/data
+    ports:
+      - "127.0.0.1:8002:8002"
+    networks:
+      - ezra-net
+    restart: unless-stopped
+
   # ── Memory API ─────────────────────────────────────────────────────────────
   memory:
     build: ./memory
@@ -106,6 +118,7 @@ volumes:
   n8n_data:
   tailscale_data:
   memory_data:
+  content_data:
 
 networks:
   ezra-net:
