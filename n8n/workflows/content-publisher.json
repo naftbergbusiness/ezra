@@ -1,0 +1,291 @@
+{
+  "name": "EZRA Content Publisher",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "cronExpression", "expression": "*/30 * * * *"}]
+        }
+      },
+      "id": "pub-001",
+      "name": "Every 30 Min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://ezra-content:8002/content/approved",
+        "options": {}
+      },
+      "id": "pub-002",
+      "name": "Get Approved Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.first().json;\nif (!Array.isArray(items) || items.length === 0) {\n  return [{ json: { skip: true } }];\n}\nreturn [{ json: { ...items[0], skip: false } }];"
+      },
+      "id": "pub-003",
+      "name": "Pick First Item",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [{"leftValue": "={{ $json.skip }}", "rightValue": true, "operator": {"type": "boolean", "operation": "equals"}}],
+          "combinator": "and"
+        }
+      },
+      "id": "pub-004",
+      "name": "Has Item?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { message: 'No approved content to publish' } }];"
+      },
+      "id": "pub-stop",
+      "name": "Nothing to Publish",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "const c = $input.first().json;\nconst niche = (c.niche || '').split('(')[0].trim().substring(0, 60);\nconst prompt = `Professional blog header image for an article titled: \"${c.title}\". Topic: ${niche}. Style: clean, modern, high-quality photographic, warm lighting, no text overlay, 16:9 aspect ratio.`;\nreturn [{ json: { ...c, dalle_request: { model: 'dall-e-3', prompt, n: 1, size: '1792x1024', quality: 'standard' } } }];"
+      },
+      "id": "pub-005",
+      "name": "Build Image Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/images/generations",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.dalle_request) }}",
+        "options": {}
+      },
+      "id": "pub-006",
+      "name": "Generate Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 180],
+      "credentials": {
+        "httpHeaderAuth": {"name": "OpenAI - EZRA"}
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nconst orig = $('Build Image Request').first().json;\nconst imageUrl = (resp.data && resp.data[0]) ? resp.data[0].url : null;\nreturn [{ json: { ...orig, image_url: imageUrl, dalle_request: undefined } }];"
+      },
+      "id": "pub-007",
+      "name": "Extract Image URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 180]
+    },
+    {
+      "parameters": {
+        "jsCode": "const c = $input.first().json;\nconst paragraphs = (c.body || '')\n  .split('\\n')\n  .filter(p => p.trim())\n  .map(p => `<p>${p}</p>`)\n  .join('\\n');\nconst imgHtml = c.image_url\n  ? `<img src=\"${c.image_url}\" alt=\"${c.title}\" style=\"width:100%;max-width:800px;height:auto;margin-bottom:24px;\" />\\n\\n`\n  : '';\nconst content = `${imgHtml}<p><strong>${c.hook || ''}</strong></p>\\n\\n${paragraphs}\\n\\n<hr>\\n<p><em>${c.cta || ''}</em></p>`;\nreturn [{ json: { ...c, wp_body: { title: c.title, content, status: 'publish' } } }];"
+      },
+      "id": "pub-008",
+      "name": "Build WP Post",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WORDPRESS_URL }}/wp-json/wp/v2/posts",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.wp_body) }}",
+        "options": {}
+      },
+      "id": "pub-009",
+      "name": "Post to WordPress",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 180],
+      "credentials": {
+        "httpBasicAuth": {"name": "WordPress - EZRA"}
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const wp = $input.first().json;\nconst prev = $('Build WP Post').first().json;\nreturn [{ json: { ...prev, wp_post_url: wp.link || null, wp_id: wp.id || null, wp_body: undefined } }];"
+      },
+      "id": "pub-010",
+      "name": "Extract WP URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 180]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": false, "leftValue": "", "typeValidation": "loose"},
+          "conditions": [{"leftValue": "={{ $json.platform }}", "rightValue": "LinkedIn", "operator": {"type": "string", "operation": "contains"}}],
+          "combinator": "and"
+        }
+      },
+      "id": "pub-011",
+      "name": "LinkedIn?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2440, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.linkedin.com/v2/ugcPosts",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "X-Restli-Protocol-Version", "value": "2.0.0"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ author: 'urn:li:person:' + $env.LINKEDIN_PERSON_ID, lifecycleState: 'PUBLISHED', specificContent: { 'com.linkedin.ugc.ShareContent': { shareCommentary: { text: ($json.hook || '') + '\\n\\n' + ($json.body || '').substring(0, 2500) + '\\n\\n' + ($json.cta || '') + ($json.wp_post_url ? '\\n\\nRead more: ' + $json.wp_post_url : '') }, shareMediaCategory: 'NONE' } }, visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' } }) }}",
+        "options": {}
+      },
+      "id": "pub-012",
+      "name": "Post to LinkedIn",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2660, 60],
+      "credentials": {
+        "httpHeaderAuth": {"name": "LinkedIn - EZRA"}
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const content = $('Extract WP URL').first().json;\nreturn [{ json: content }];"
+      },
+      "id": "pub-013",
+      "name": "After LinkedIn",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2880, 60]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": false, "leftValue": "", "typeValidation": "loose"},
+          "conditions": [{"leftValue": "={{ $json.platform }}", "rightValue": "Pinterest", "operator": {"type": "string", "operation": "contains"}}],
+          "combinator": "and"
+        }
+      },
+      "id": "pub-014",
+      "name": "Pinterest?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [3100, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.pinterest.com/v5/pins",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ board_id: $env.PINTEREST_BOARD_ID, title: ($json.title || '').substring(0, 100), description: (($json.hook || '') + ' ' + ($json.cta || '')).substring(0, 500), media_source: { source_type: 'image_url', url: $json.image_url || '' }, link: $json.wp_post_url || undefined }) }}",
+        "options": {}
+      },
+      "id": "pub-015",
+      "name": "Post to Pinterest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3320, 60],
+      "credentials": {
+        "httpHeaderAuth": {"name": "Pinterest - EZRA"}
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const content = $('Extract WP URL').first().json;\nreturn [{ json: content }];"
+      },
+      "id": "pub-016",
+      "name": "After Pinterest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3540, 60]
+    },
+    {
+      "parameters": {
+        "jsCode": "const c = $input.first().json;\nreturn [{ json: { ...c, publish_url: 'http://ezra-content:8002/content/mark-published/' + c.id } }];"
+      },
+      "id": "pub-017",
+      "name": "Build Publish URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3760, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.publish_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ platform_post_url: $json.wp_post_url, image_url: $json.image_url }) }}",
+        "options": {}
+      },
+      "id": "pub-018",
+      "name": "Mark Published",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3980, 180]
+    }
+  ],
+  "connections": {
+    "Every 30 Min": {"main": [[{"node": "Get Approved Content", "type": "main", "index": 0}]]},
+    "Get Approved Content": {"main": [[{"node": "Pick First Item", "type": "main", "index": 0}]]},
+    "Pick First Item": {"main": [[{"node": "Has Item?", "type": "main", "index": 0}]]},
+    "Has Item?": {"main": [
+      [{"node": "Nothing to Publish", "type": "main", "index": 0}],
+      [{"node": "Build Image Request", "type": "main", "index": 0}]
+    ]},
+    "Build Image Request": {"main": [[{"node": "Generate Image", "type": "main", "index": 0}]]},
+    "Generate Image": {"main": [[{"node": "Extract Image URL", "type": "main", "index": 0}]]},
+    "Extract Image URL": {"main": [[{"node": "Build WP Post", "type": "main", "index": 0}]]},
+    "Build WP Post": {"main": [[{"node": "Post to WordPress", "type": "main", "index": 0}]]},
+    "Post to WordPress": {"main": [[{"node": "Extract WP URL", "type": "main", "index": 0}]]},
+    "Extract WP URL": {"main": [[{"node": "LinkedIn?", "type": "main", "index": 0}]]},
+    "LinkedIn?": {"main": [
+      [{"node": "Pinterest?", "type": "main", "index": 0}],
+      [{"node": "Post to LinkedIn", "type": "main", "index": 0}]
+    ]},
+    "Post to LinkedIn": {"main": [[{"node": "After LinkedIn", "type": "main", "index": 0}]]},
+    "After LinkedIn": {"main": [[{"node": "Pinterest?", "type": "main", "index": 0}]]},
+    "Pinterest?": {"main": [
+      [{"node": "Build Publish URL", "type": "main", "index": 0}],
+      [{"node": "Post to Pinterest", "type": "main", "index": 0}]
+    ]},
+    "Post to Pinterest": {"main": [[{"node": "After Pinterest", "type": "main", "index": 0}]]},
+    "After Pinterest": {"main": [[{"node": "Build Publish URL", "type": "main", "index": 0}]]},
+    "Build Publish URL": {"main": [[{"node": "Mark Published", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1", "timezone": "America/New_York"}
+}

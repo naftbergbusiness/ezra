@@ -69,6 +69,9 @@ def init_db():
             tags            TEXT,
             status          TEXT DEFAULT 'pending',
             rejection_note  TEXT,
+            platform_post_url TEXT,
+            image_url       TEXT,
+            published_at    TEXT,
             created         TEXT NOT NULL,
             updated         TEXT NOT NULL
         );
@@ -91,6 +94,13 @@ def init_db():
         );
     """)
     conn.commit()
+    # Migrate existing databases that predate these columns
+    for col, coldef in [("platform_post_url", "TEXT"), ("image_url", "TEXT"), ("published_at", "TEXT")]:
+        try:
+            conn.execute(f"ALTER TABLE content_queue ADD COLUMN {col} {coldef}")
+            conn.commit()
+        except Exception:
+            pass
     conn.close()
 
 def now():
@@ -130,6 +140,10 @@ class PerformanceEntry(BaseModel):
     platform: str
     metric: str
     value: float
+
+class PublishResult(BaseModel):
+    platform_post_url: Optional[str] = None
+    image_url: Optional[str] = None
 
 # ── Health ────────────────────────────────────────────────────────────────────
 @app.get("/health")
@@ -254,6 +268,29 @@ def reject_content(cid: int, action: ApprovalAction = ApprovalAction()):
     conn.close()
     return {"status": "rejected", "id": cid}
 
+@app.get("/content/approved")
+def get_approved():
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM content_queue WHERE status='approved' ORDER BY created ASC"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+@app.post("/content/mark-published/{cid}")
+def mark_published(cid: int, result: PublishResult = PublishResult()):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM content_queue WHERE id=?", (cid,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Content not found")
+    conn.execute(
+        "UPDATE content_queue SET status='published', platform_post_url=?, image_url=?, published_at=?, updated=? WHERE id=?",
+        (result.platform_post_url, result.image_url, now(), now(), cid)
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "published", "id": cid}
+
 @app.get("/content/export/{cid}", response_class=PlainTextResponse)
 def export_content(cid: int):
     conn = get_db()
@@ -328,6 +365,7 @@ def dashboard():
             "pending": conn.execute("SELECT COUNT(*) FROM content_queue WHERE status='pending'").fetchone()[0],
             "approved": conn.execute("SELECT COUNT(*) FROM content_queue WHERE status='approved'").fetchone()[0],
             "rejected": conn.execute("SELECT COUNT(*) FROM content_queue WHERE status='rejected'").fetchone()[0],
+            "published": conn.execute("SELECT COUNT(*) FROM content_queue WHERE status='published'").fetchone()[0],
         },
         "research_runs": conn.execute("SELECT COUNT(*) FROM research_log").fetchone()[0],
     }

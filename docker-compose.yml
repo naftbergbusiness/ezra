@@ -56,6 +56,9 @@ services:
       DB_TYPE: sqlite
       DB_SQLITE_DATABASE: /home/node/.n8n/database.sqlite
       GENERIC_TIMEZONE: ${TIMEZONE:-America/New_York}
+      WORDPRESS_URL: ${WORDPRESS_URL:-}
+      LINKEDIN_PERSON_ID: ${LINKEDIN_PERSON_ID:-}
+      PINTEREST_BOARD_ID: ${PINTEREST_BOARD_ID:-}
     volumes:
       - n8n_data:/home/node/.n8n
     ports:
