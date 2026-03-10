@@ -104,7 +104,7 @@ Visual workflow automation. The nervous system connecting EZRA to Gmail, Calenda
 
 ### Tailscale
 Encrypted mesh VPN. Home PC, Work PC, and Android phone on the same private network regardless of physical location. **No ports open to the public internet. All remote access via Tailscale.**
-- Tailscale Serve URLs: `https://ezra.tail5c85c0.ts.net/` (Open WebUI), `https://ezra.tail5c85c0.ts.net/n8n` (n8n)
+- Tailscale Serve URLs: `https://desktop-k2q23vb.tail5c85c0.ts.net/` (Open WebUI), `https://desktop-k2q23vb.tail5c85c0.ts.net/n8n/` (n8n)
 
 ### SQLite + RAG (Memory System)
 - **SQLite:** Single-file database. Zero config. Stores preferences, conversation history, task history, contacts.
@@ -193,7 +193,7 @@ Use Cowork for on-demand frontier AI work on local files. Use EZRA for always-on
 - Docker Compose stack running: Ollama, Open WebUI, n8n, Tailscale
 - Local model: **Qwen3-8B** (5.2GB, CPU inference)
 - Open WebUI admin: naftbergbusiness@gmail.com
-- Tailscale node: `ezra.tail5c85c0.ts.net`
+- Tailscale node: `desktop-k2q23vb.tail5c85c0.ts.net`
 - Tailscale Serve: Open WebUI at `/`, n8n at `/n8n`
 - Next phase: Connect Gmail + Google Calendar to n8n, build Morning Briefing workflow
 
