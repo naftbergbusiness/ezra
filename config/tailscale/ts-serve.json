@@ -5,7 +5,7 @@
     }
   },
   "Web": {
-    "ezra.tail5c85c0.ts.net:443": {
+    "desktop-k2q23vb.tail5c85c0.ts.net:443": {
       "Handlers": {
         "/": {
           "Proxy": "http://127.0.0.1:3000"
